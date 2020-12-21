@@ -34,6 +34,12 @@ func newTestServer(t testing.TB, want []interface{}) *testServer {
 	return ts
 }
 
+func (s *testServer) expect(expect ...map[string]interface{}) {
+	for _, ex := range expect {
+		s.want = append(s.want, []interface{}{ex})
+	}
+}
+
 func (s *testServer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	t := s.t
 	t.Helper()
@@ -56,36 +62,58 @@ func (s *testServer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 func Test_run(t *testing.T) {
 	ctx := context.Background()
 
-	lines := `{"id": "asdf", "time": "1608309835000", "type": "foo"}
-{"id": "asdf", "time": "1608309835000", "type": "bar"}`
+	lines := `
+{"id": "foo", "time": "1608309835000", "type": "foo"}
+
+   
+{"id": "bar", "time": "1608309835000", "type": "bar"}
+{"id": "baz", "time": "1608309835000", "type": "baz"}
+{"id": "qux", "time": "1608309835000", "type": "qux"}
+`
 	scanner := bufio.NewScanner(strings.NewReader(lines))
 	ts := newTestServer(t, []interface{}{})
-	ts.want = []interface{}{
-		[]map[string]interface{}{
-			{
-				"id":          "asdf",
-				"eventTime":   "2020-12-18T16:43:55Z",
-				"dataVersion": "1.0",
-				"subject":     "my subject",
-				"eventType":   "foo",
-				"data": map[string]interface{}{
-					"id": "asdf", "time": "1608309835000", "type": "foo",
-				},
+	ts.expect(
+		map[string]interface{}{
+			"id":          "foo",
+			"eventTime":   "2020-12-18T16:43:55Z",
+			"dataVersion": "1.0",
+			"subject":     "my subject",
+			"eventType":   "foo",
+			"data": map[string]interface{}{
+				"id": "foo", "time": "1608309835000", "type": "foo",
 			},
 		},
-		[]map[string]interface{}{
-			{
-				"id":          "asdf",
-				"eventTime":   "2020-12-18T16:43:55Z",
-				"dataVersion": "1.0",
-				"subject":     "my subject",
-				"eventType":   "bar",
-				"data": map[string]interface{}{
-					"id": "asdf", "time": "1608309835000", "type": "bar",
-				},
+		map[string]interface{}{
+			"id":          "bar",
+			"eventTime":   "2020-12-18T16:43:55Z",
+			"dataVersion": "1.0",
+			"subject":     "my subject",
+			"eventType":   "bar",
+			"data": map[string]interface{}{
+				"id": "bar", "time": "1608309835000", "type": "bar",
 			},
 		},
-	}
+		map[string]interface{}{
+			"id":          "baz",
+			"eventTime":   "2020-12-18T16:43:55Z",
+			"dataVersion": "1.0",
+			"subject":     "my subject",
+			"eventType":   "baz",
+			"data": map[string]interface{}{
+				"id": "baz", "time": "1608309835000", "type": "baz",
+			},
+		},
+		map[string]interface{}{
+			"id":          "qux",
+			"eventTime":   "2020-12-18T16:43:55Z",
+			"dataVersion": "1.0",
+			"subject":     "my subject",
+			"eventType":   "qux",
+			"data": map[string]interface{}{
+				"id": "qux", "time": "1608309835000", "type": "qux",
+			},
+		},
+	)
 	topicHost := strings.TrimPrefix(ts.server.URL, "http://")
 	cli := &cliOptions{
 		TopicHost: topicHost,

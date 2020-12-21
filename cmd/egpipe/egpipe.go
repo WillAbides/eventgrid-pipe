@@ -8,8 +8,11 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
+	"syscall"
 	"time"
 
 	"github.com/alecthomas/kong"
@@ -58,28 +61,47 @@ func (l lineData) unmarshalled() (interface{}, error) {
 }
 
 func run(ctx context.Context, cli *cliOptions, scanner *bufio.Scanner) error {
+	header := http.Header{}
+	if cli.Header != nil {
+		for k, v := range cli.Header {
+			header.Set(k, v)
+		}
+	}
+
+	publisher := &eventGridPublisher{
+		scheme:    cli.PublishScheme,
+		topicHost: cli.TopicHost,
+		reqHeader: header,
+	}
+
+	doneMutex := new(sync.Mutex)
+	done := false
+	c := make(chan os.Signal, 2)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-c
+		doneMutex.Lock()
+		done = true
+		doneMutex.Unlock()
+	}()
+
 	for scanner.Scan() {
+		b := scanner.Bytes()
+		b = bytes.TrimSpace(b)
+		if len(b) == 0 {
+			continue
+		}
 		ev, err := buildEvent(cli, scanner.Bytes())
 		if err != nil {
 			return err
 		}
 
-		header := http.Header{}
-		if cli.Header != nil {
-			for k, v := range cli.Header {
-				header.Set(k, v)
-			}
-		}
-
-		publisher := &eventGridPublisher{
-			scheme:    cli.PublishScheme,
-			topicHost: cli.TopicHost,
-			reqHeader: header,
-		}
-
-		_, err = publisher.publishEvents(ctx, []event{*ev})
+		err = publisher.publishEvent(ctx, ev)
 		if err != nil {
 			return err
+		}
+		if done {
+			break
 		}
 	}
 	return scanner.Err()
@@ -210,16 +232,16 @@ type eventGridPublisher struct {
 	reqHeader  http.Header
 }
 
-func (p *eventGridPublisher) publishEvents(ctx context.Context, events []event) (*http.Response, error) {
-	var buf bytes.Buffer
-	err := json.NewEncoder(&buf).Encode(events)
-	if err != nil {
-		return nil, err
-	}
+func (p *eventGridPublisher) publishEvent(ctx context.Context, ev *event) error {
 	u := fmt.Sprintf("%s://%s/api/events?api-version=2018-01-01", p.scheme, p.topicHost)
+	var buf bytes.Buffer
+	err := json.NewEncoder(&buf).Encode([]*event{ev})
+	if err != nil {
+		return err
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, &buf)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	req.Header = p.reqHeader
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
@@ -229,12 +251,12 @@ func (p *eventGridPublisher) publishEvents(ctx context.Context, events []event) 
 	}
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if resp.StatusCode != 200 {
-		return resp, fmt.Errorf("not OK")
+		return fmt.Errorf("not OK")
 	}
-	return resp, nil
+	return nil
 }
 
 // event properties of an event published to an event Grid topic using the EventGrid Schema.

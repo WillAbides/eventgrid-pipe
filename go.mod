@@ -1,6 +1,6 @@
 module github.com/willabides/eventgrid-pipe
 
-go 1.14
+go 1.15
 
 require (
 	github.com/alecthomas/kong v0.2.12
