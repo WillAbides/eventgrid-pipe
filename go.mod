@@ -1,4 +1,4 @@
-module github.com/willabides/goproject-tmpl
+module github.com/willabides/eventgrid-pipe
 
 go 1.14
 
