@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
@@ -59,6 +60,39 @@ func (s *testServer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	assert.JSONEq(t, string(want), string(body))
 }
 
+func Test_cliOptions_url(t *testing.T) {
+	for _, td := range []struct {
+		input string
+		want  string
+	}{
+		{
+			input: `dummy.westus2-1.eventgrid.azure.net`,
+			want:  `https://dummy.westus2-1.eventgrid.azure.net/api/events?api-version=2018-01-01`,
+		},
+		{
+			input: `https://dummy.westus2-1.eventgrid.azure.net`,
+			want:  `https://dummy.westus2-1.eventgrid.azure.net/api/events?api-version=2018-01-01`,
+		},
+		{
+			input: `https://dummy.westus2-1.eventgrid.azure.net/foo/bar`,
+			want:  `https://dummy.westus2-1.eventgrid.azure.net/foo/bar?api-version=2018-01-01`,
+		},
+		{
+			input: `http://127.0.0.1:1234`,
+			want:  `http://127.0.0.1:1234/api/events?api-version=2018-01-01`,
+		},
+	} {
+		t.Run(fmt.Sprintf("%q", td.input), func(t *testing.T) {
+			c := &cliOptions{
+				TopicHost: td.input,
+			}
+			got, err := c.url()
+			require.NoError(t, err)
+			require.Equal(t, td.want, got)
+		})
+	}
+}
+
 func Test_run(t *testing.T) {
 	ctx := context.Background()
 
@@ -68,10 +102,11 @@ func Test_run(t *testing.T) {
    
 {"id": "bar", "time": "1608309835000", "type": "bar"}
 {"id": "baz", "time": "1608309835000", "type": "baz"}
-{"id": "qux", "time": "1608309835000", "type": "qux"}
+{"id": "qux", "time": 1608309835000, "type": "qux"}
 `
 	scanner := bufio.NewScanner(strings.NewReader(lines))
 	ts := newTestServer(t, []interface{}{})
+
 	ts.expect(
 		map[string]interface{}{
 			"id":          "foo",
@@ -110,22 +145,20 @@ func Test_run(t *testing.T) {
 			"subject":     "my subject",
 			"eventType":   "qux",
 			"data": map[string]interface{}{
-				"id": "qux", "time": "1608309835000", "type": "qux",
+				"id": "qux", "time": 1608309835000, "type": "qux",
 			},
 		},
 	)
-	topicHost := strings.TrimPrefix(ts.server.URL, "http://")
 	cli := &cliOptions{
-		TopicHost: topicHost,
+		TopicHost: ts.server.URL,
 		Header: map[string]string{
 			"foo": "bar",
 		},
-		ID:            "jp:id",
-		Subject:       "my subject",
-		EventType:     "jp:type",
-		EventTime:     "jp:time",
-		DataVersion:   "1.0",
-		PublishScheme: "http",
+		ID:          "jp:id",
+		Subject:     "my subject",
+		EventType:   "jp:type",
+		EventTime:   "jp:time",
+		DataVersion: "1.0",
 	}
 	err := run(ctx, cli, scanner)
 	require.NoError(t, err)

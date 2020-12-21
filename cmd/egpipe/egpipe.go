@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"strconv"
@@ -30,14 +31,13 @@ func main() {
 }
 
 type cliOptions struct {
-	TopicHost     string            `kong:"arg,required"`
-	Header        map[string]string `kong:"short=H"`
-	ID            string            `kong:"short=i"`
-	Subject       string            `kong:"required,short=s"`
-	EventType     string            `kong:"required,short=t,name='type'"`
-	EventTime     string            `kong:"name='timestamp',short=T,default='now'"`
-	DataVersion   string            `kong:"default=1.0"`
-	PublishScheme string            `kong:"default='https'"`
+	TopicHost   string            `kong:"arg,required"`
+	Header      map[string]string `kong:"short=H"`
+	ID          string            `kong:"short=i"`
+	Subject     string            `kong:"required,short=s"`
+	EventType   string            `kong:"required,short=t,name='type'"`
+	EventTime   string            `kong:"name='timestamp',short=T,default='now'"`
+	DataVersion string            `kong:"default=1.0"`
 
 	jmespaths map[string]*jmespath.JMESPath
 	optDefs   map[string]string
@@ -60,6 +60,28 @@ func (l lineData) unmarshalled() (interface{}, error) {
 	return l.iface, nil
 }
 
+func (c *cliOptions) url() (string, error) {
+	th := c.TopicHost
+	if !strings.Contains(th, `://`) {
+		th = "https://" + th
+	}
+	pURL, err := url.Parse(th)
+	if err != nil {
+		return "", err
+	}
+
+	if pURL.Path == "" {
+		pURL.Path = `api/events`
+	}
+	query := pURL.Query()
+	if query.Get("api-version") == "" {
+		query.Set("api-version", "2018-01-01")
+	}
+	pURL.RawQuery = query.Encode()
+
+	return pURL.String(), nil
+}
+
 func run(ctx context.Context, cli *cliOptions, scanner *bufio.Scanner) error {
 	header := http.Header{}
 	if cli.Header != nil {
@@ -68,9 +90,12 @@ func run(ctx context.Context, cli *cliOptions, scanner *bufio.Scanner) error {
 		}
 	}
 
+	thURL, err := cli.url()
+	if err != nil {
+		return err
+	}
 	publisher := &eventGridPublisher{
-		scheme:    cli.PublishScheme,
-		topicHost: cli.TopicHost,
+		endpoint:  thURL,
 		reqHeader: header,
 	}
 
@@ -220,26 +245,26 @@ func jmespathString(jp *jmespath.JMESPath, data interface{}) (string, error) {
 	switch val := got.(type) {
 	case string:
 		return val, nil
+	case float64:
+		return fmt.Sprintf("%.0f", val), nil
 	default:
 		return fmt.Sprintf("%v", val), nil
 	}
 }
 
 type eventGridPublisher struct {
-	scheme     string
-	topicHost  string
+	endpoint   string
 	httpClient *http.Client
 	reqHeader  http.Header
 }
 
 func (p *eventGridPublisher) publishEvent(ctx context.Context, ev *event) error {
-	u := fmt.Sprintf("%s://%s/api/events?api-version=2018-01-01", p.scheme, p.topicHost)
 	var buf bytes.Buffer
 	err := json.NewEncoder(&buf).Encode([]*event{ev})
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, &buf)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.endpoint, &buf)
 	if err != nil {
 		return err
 	}
