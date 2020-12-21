@@ -133,41 +133,41 @@ func (c *cliOptions) getVal(valName string, data lineData) (string, error) {
 }
 
 func buildEvent(cli *cliOptions, data []byte) (*event, error) {
-	event := new(event)
+	ev := new(event)
 
 	ld := lineData{
 		data: data,
 	}
 	var err error
-	event.ID, err = cli.getVal("id", ld)
+	ev.ID, err = cli.getVal("id", ld)
 	if err != nil {
 		return nil, err
 	}
-	if event.ID == "" {
-		event.ID = uuid.New().String()
+	if ev.ID == "" {
+		ev.ID = uuid.New().String()
 	}
 
-	event.Subject, err = cli.getVal("subject", ld)
-	if err != nil {
-		return nil, err
-	}
-
-	event.DataVersion, err = cli.getVal("dataVersion", ld)
+	ev.Subject, err = cli.getVal("subject", ld)
 	if err != nil {
 		return nil, err
 	}
 
-	event.EventTime, err = cli.eventTime(ld)
+	ev.DataVersion, err = cli.getVal("dataVersion", ld)
 	if err != nil {
 		return nil, err
 	}
 
-	event.EventType, err = cli.getVal("eventType", ld)
+	ev.EventTime, err = cli.eventTime(ld)
 	if err != nil {
 		return nil, err
 	}
 
-	return event, nil
+	ev.EventType, err = cli.getVal("eventType", ld)
+	if err != nil {
+		return nil, err
+	}
+
+	return ev, nil
 }
 
 func (c *cliOptions) eventTime(ld lineData) (string, error) {
