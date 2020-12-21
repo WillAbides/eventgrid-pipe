@@ -68,6 +68,9 @@ func Test_run(t *testing.T) {
 				"dataVersion": "1.0",
 				"subject":     "my subject",
 				"eventType":   "foo",
+				"data": map[string]interface{}{
+					"id": "asdf", "time": "1608309835000", "type": "foo",
+				},
 			},
 		},
 		[]map[string]interface{}{
@@ -77,6 +80,9 @@ func Test_run(t *testing.T) {
 				"dataVersion": "1.0",
 				"subject":     "my subject",
 				"eventType":   "bar",
+				"data": map[string]interface{}{
+					"id": "asdf", "time": "1608309835000", "type": "bar",
+				},
 			},
 		},
 	}

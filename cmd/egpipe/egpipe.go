@@ -167,6 +167,8 @@ func buildEvent(cli *cliOptions, data []byte) (*event, error) {
 		return nil, err
 	}
 
+	ev.Data = json.RawMessage(data)
+
 	return ev, nil
 }
 
