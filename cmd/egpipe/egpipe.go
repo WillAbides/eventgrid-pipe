@@ -116,7 +116,8 @@ func run(ctx context.Context, cli *cliOptions, scanner *bufio.Scanner) error {
 		if len(b) == 0 {
 			continue
 		}
-		ev, err := buildEvent(cli, scanner.Bytes())
+		var ev *event
+		ev, err = buildEvent(cli, scanner.Bytes())
 		if err != nil {
 			return err
 		}
