@@ -31,13 +31,15 @@ func main() {
 }
 
 type cliOptions struct {
-	TopicHost   string            `kong:"arg,required"`
-	Header      map[string]string `kong:"short=H"`
-	ID          string            `kong:"short=i"`
-	Subject     string            `kong:"required,short=s"`
-	EventType   string            `kong:"required,short=t,name='type'"`
-	EventTime   string            `kong:"name='timestamp',short=T,default='now'"`
-	DataVersion string            `kong:"default=1.0"`
+	TopicHost     string            `kong:"arg,required"`
+	Header        map[string]string `kong:"short=H"`
+	ID            string            `kong:"short=i"`
+	Subject       string            `kong:"required,short=s"`
+	EventType     string            `kong:"required,short=t,name='type'"`
+	EventTime     string            `kong:"name='timestamp',short=T,default='now'"`
+	DataVersion   string            `kong:"default=1.0"`
+	QueueSize     int               `kong:"default=10"`
+	FlushInterval int               `kong:"default=2000,help='milliseconds between queue flushes'"`
 
 	jmespaths map[string]*jmespath.JMESPath
 	optDefs   map[string]string
@@ -95,8 +97,10 @@ func run(ctx context.Context, cli *cliOptions, scanner *bufio.Scanner) error {
 		return err
 	}
 	publisher := &eventGridPublisher{
-		endpoint:  thURL,
-		reqHeader: header,
+		resetTicker:  func() {},
+		maxQueueSize: cli.QueueSize,
+		endpoint:     thURL,
+		reqHeader:    header,
 	}
 
 	doneMutex := new(sync.Mutex)
@@ -110,6 +114,22 @@ func run(ctx context.Context, cli *cliOptions, scanner *bufio.Scanner) error {
 		doneMutex.Unlock()
 	}()
 
+	if cli.FlushInterval != 0 {
+		interval := time.Duration(cli.FlushInterval) * time.Millisecond
+		ticker := time.NewTicker(interval)
+		publisher.resetTicker = func() {
+			ticker.Reset(interval)
+		}
+		go func() {
+			for range ticker.C {
+				err2 := publisher.flushIfNeeded(ctx, 0)
+				if err2 != nil {
+					os.Exit(1)
+				}
+			}
+		}()
+	}
+
 	for scanner.Scan() {
 		b := scanner.Bytes()
 		b = bytes.TrimSpace(b)
@@ -121,14 +141,17 @@ func run(ctx context.Context, cli *cliOptions, scanner *bufio.Scanner) error {
 		if err != nil {
 			return err
 		}
-
-		err = publisher.publishEvent(ctx, ev)
+		err = publisher.addEvent(ctx, ev)
 		if err != nil {
 			return err
 		}
 		if done {
 			break
 		}
+	}
+	err = publisher.flushIfNeeded(ctx, 0)
+	if err != nil {
+		return err
 	}
 	return scanner.Err()
 }
@@ -254,14 +277,42 @@ func jmespathString(jp *jmespath.JMESPath, data interface{}) (string, error) {
 }
 
 type eventGridPublisher struct {
-	endpoint   string
-	httpClient *http.Client
-	reqHeader  http.Header
+	mutex        sync.Mutex
+	endpoint     string
+	httpClient   *http.Client
+	reqHeader    http.Header
+	maxQueueSize int
+	cache        []*event
+	resetTicker  func()
 }
 
-func (p *eventGridPublisher) publishEvent(ctx context.Context, ev *event) error {
+func (p *eventGridPublisher) addEvent(ctx context.Context, ev *event) error {
+	p.mutex.Lock()
+	p.cache = append(p.cache, ev)
+	if len(p.cache) == 1 {
+		p.resetTicker()
+	}
+	p.mutex.Unlock()
+	return p.flushIfNeeded(ctx, p.maxQueueSize)
+}
+
+func (p *eventGridPublisher) flushIfNeeded(ctx context.Context, maxQueueSize int) error {
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+	if len(p.cache) == 0 || len(p.cache) < maxQueueSize {
+		return nil
+	}
+	err := p.flush(ctx)
+	if err != nil {
+		return err
+	}
+	p.cache = p.cache[:0]
+	return nil
+}
+
+func (p *eventGridPublisher) flush(ctx context.Context) error {
 	var buf bytes.Buffer
-	err := json.NewEncoder(&buf).Encode([]*event{ev})
+	err := json.NewEncoder(&buf).Encode(p.cache)
 	if err != nil {
 		return err
 	}

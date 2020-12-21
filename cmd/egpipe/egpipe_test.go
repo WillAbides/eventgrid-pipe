@@ -36,9 +36,7 @@ func newTestServer(t testing.TB, want []interface{}) *testServer {
 }
 
 func (s *testServer) expect(expect ...map[string]interface{}) {
-	for _, ex := range expect {
-		s.want = append(s.want, []interface{}{ex})
-	}
+	s.want = append(s.want, expect)
 }
 
 func (s *testServer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
@@ -138,17 +136,17 @@ func Test_run(t *testing.T) {
 				"id": "baz", "time": "1608309835000", "type": "baz",
 			},
 		},
-		map[string]interface{}{
-			"id":          "qux",
-			"eventTime":   "2020-12-18T16:43:55Z",
-			"dataVersion": "1.0",
-			"subject":     "my subject",
-			"eventType":   "qux",
-			"data": map[string]interface{}{
-				"id": "qux", "time": 1608309835000, "type": "qux",
-			},
-		},
 	)
+	ts.expect(map[string]interface{}{
+		"id":          "qux",
+		"eventTime":   "2020-12-18T16:43:55Z",
+		"dataVersion": "1.0",
+		"subject":     "my subject",
+		"eventType":   "qux",
+		"data": map[string]interface{}{
+			"id": "qux", "time": 1608309835000, "type": "qux",
+		},
+	})
 	cli := &cliOptions{
 		TopicHost: ts.server.URL,
 		Header: map[string]string{
@@ -159,6 +157,7 @@ func Test_run(t *testing.T) {
 		EventType:   "jp:type",
 		EventTime:   "jp:time",
 		DataVersion: "1.0",
+		QueueSize:   3,
 	}
 	err := run(ctx, cli, scanner)
 	require.NoError(t, err)
