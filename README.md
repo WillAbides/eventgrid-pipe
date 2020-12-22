@@ -37,14 +37,20 @@ Arguments:
 
 Flags:
   -h, --help                   Show context-sensitive help.
-  -i, --id=STRING              Value for the "id" field. If unset, a uuid will be generated for each event. JMESPath expressions allowed with "jp:"
-                               prefix.
-  -s, --subject=STRING         Value for the "subject" field. JMESPath expressions allowed with "jp:" prefix.
-  -t, --type=STRING            Value for the "eventType" field. JMESPath expressions allowed with "jp:" prefix.
-  -T, --timestamp="now"        Value for the "eventTime" field converted from epoch milliseconds. If unset, the current system time will be used.JMESPath
-                               expressions allowed with "jp:" prefix.
-  -H, --header=HEADER,...      Header to sent with the request in the same format as curl. e.g. '-H "aeg-sas-key: $EVKEY"'
-      --data-version="1.0"     Value for the "dataVersion" field. JMESPath expressions allowed with "jp:" prefix.
+  -i, --id=STRING              Value for the "id" field. If unset, a uuid will be generated for
+                               each event. JMESPath expressions allowed with "jp:" prefix.
+  -s, --subject=STRING         Value for the "subject" field. JMESPath expressions allowed with
+                               "jp:" prefix.
+  -t, --type=STRING            Value for the "eventType" field. JMESPath expressions allowed with
+                               "jp:" prefix.
+  -T, --timestamp="now"        Value for the "eventTime" field converted from epoch milliseconds.
+                               If unset, the current system time will be used.JMESPath expressions
+                               allowed with "jp:" prefix.
+  -H, --header=HEADER,...      Header to sent with the request in the same format as curl. e.g. '-H
+                               "aeg-sas-key: $EVKEY"'
+      --data-version="1.0"     Value for the "dataVersion" field. JMESPath expressions allowed with
+                               "jp:" prefix.
       --batch-size=10          Number of events to send in a batch.
-      --flush-interval=2000    Time in milliseconds to wait before sending a partial batch. Set to 0 to never send a partial batch.
+      --flush-interval=2000    Time in milliseconds to wait before sending a partial batch. Set to
+                               0 to never send a partial batch.
 ```
