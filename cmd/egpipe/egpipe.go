@@ -21,31 +21,67 @@ import (
 	"github.com/jmespath/go-jmespath"
 )
 
-func main() {
-	var cli cliOptions
-	k := kong.Parse(&cli)
-	scanner := bufio.NewScanner(os.Stdin)
-	ctx := context.Background()
-	err := run(ctx, &cli, scanner)
-	k.FatalIfErrorf(err)
+var kongVars = kong.Vars{
+	"header_help":         `Header to sent with the request in the same format as curl. e.g. '-H "aeg-sas-key: $EVKEY"'`,
+	"data_version_help":   `Value for the "dataVersion" field. JMESPath expressions allowed with "jp:" prefix.`,
+	"batch_size_help":     `Number of events to send in a batch.`,
+	"flush_interval_help": `Time in milliseconds to wait before sending a partial batch. Set to 0 to never send a partial batch.`,
+	"topic_endpoint_help": `Endpoint for posting events`,
+
+	"id_help":      `Value for the "id" field. If unset, a uuid will be generated for each event. JMESPath expressions allowed with "jp:" prefix.`,
+	"subject_help": `Value for the "subject" field. JMESPath expressions allowed with "jp:" prefix.`,
+	"type_help":    `Value for the "eventType" field. JMESPath expressions allowed with "jp:" prefix.`,
+	"time_help": `Value for the "eventTime" field converted from epoch milliseconds. If unset, the current 
+system time will be used.JMESPath expressions allowed with "jp:" prefix.`,
 }
 
 type cliOptions struct {
-	TopicHost     string            `kong:"arg,required"`
-	Header        map[string]string `kong:"short=H"`
-	ID            string            `kong:"short=i"`
-	Subject       string            `kong:"required,short=s"`
-	EventType     string            `kong:"required,short=t,name='type'"`
-	EventTime     string            `kong:"name='timestamp',short=T,default='now'"`
-	DataVersion   string            `kong:"default=1.0"`
-	QueueSize     int               `kong:"default=10"`
-	FlushInterval int               `kong:"default=2000,help='milliseconds between queue flushes'"`
+	TopicEndpoint string   `kong:"arg,required,help=${topic_endpoint_help}"`
+	ID            string   `kong:"short=i,help=${id_help}"`
+	Subject       string   `kong:"required,short=s,help=${subject_help}"`
+	EventType     string   `kong:"required,short=t,name='type',help=${type_help}"`
+	EventTime     string   `kong:"name='timestamp',short=T,default='now',help=${time_help}"`
+	Header        []string `kong:"short=H,help=${header_help}"`
+	DataVersion   string   `kong:"default=1.0,help=${data_version_help}"`
+	BatchSize     int      `kong:"default=10,help=${batch_size_help}"`
+	FlushInterval int      `kong:"default=2000,help=${flush_interval_help}"`
 
 	jmespaths map[string]*jmespath.JMESPath
 	optDefs   map[string]string
 }
 
+const helpDescription = `egpipe posts events to Azure Event Grid.
+
+example:
+  $ topic_endpoint='https://mytopicendpoint.westus2-1.eventgrid.azure.net'
+  $ topic_key='shhh_secret_topic_key'
+  $ data="$(cat <<"EOF"
+      {"action": "obj.add", "@timestamp": 1604953432032, "el_name": "foo", "doc_id": "asdf"}
+      {"action": "obj.rem", "@timestamp": 1604953732032, "el_name": "bar", "doc_id": "fdsa"}
+    EOF
+    )"
+  $ echo "$data" | \
+    egpipe "$topic_endpoint" \
+    -H "aeg-sas-key: $topic_key" \
+    -T 'jp:"@timestamp"' \
+    -t 'audit-log' \
+    -s 'jp:action' \
+    -i 'jp:doc_id'
+
+Learn about JMESPath syntax at https://jmespath.org
+
+`
+
 const jmespathPrefix = "jp:"
+
+func main() {
+	var cli cliOptions
+	k := kong.Parse(&cli, kongVars, kong.Description(helpDescription))
+	scanner := bufio.NewScanner(os.Stdin)
+	ctx := context.Background()
+	err := run(ctx, &cli, scanner)
+	k.FatalIfErrorf(err)
+}
 
 type lineData struct {
 	data  []byte
@@ -63,7 +99,7 @@ func (l lineData) unmarshalled() (interface{}, error) {
 }
 
 func (c *cliOptions) url() (string, error) {
-	th := c.TopicHost
+	th := c.TopicEndpoint
 	if !strings.Contains(th, `://`) {
 		th = "https://" + th
 	}
@@ -86,10 +122,13 @@ func (c *cliOptions) url() (string, error) {
 
 func run(ctx context.Context, cli *cliOptions, scanner *bufio.Scanner) error {
 	header := http.Header{}
-	if cli.Header != nil {
-		for k, v := range cli.Header {
-			header.Set(k, v)
+
+	for _, hdr := range cli.Header {
+		parts := strings.SplitN(hdr, ":", 2)
+		if len(parts) != 2 {
+			return fmt.Errorf("invalid header %q", hdr)
 		}
+		header.Set(strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1]))
 	}
 
 	thURL, err := cli.url()
@@ -98,7 +137,7 @@ func run(ctx context.Context, cli *cliOptions, scanner *bufio.Scanner) error {
 	}
 	publisher := &eventGridPublisher{
 		resetTicker:  func() {},
-		maxQueueSize: cli.QueueSize,
+		maxQueueSize: cli.BatchSize,
 		endpoint:     thURL,
 		reqHeader:    header,
 	}
@@ -331,7 +370,7 @@ func (p *eventGridPublisher) flush(ctx context.Context) error {
 		return err
 	}
 	if resp.StatusCode != 200 {
-		return fmt.Errorf("not OK")
+		return fmt.Errorf("not OK, statusCode: %d", resp.StatusCode)
 	}
 	return nil
 }

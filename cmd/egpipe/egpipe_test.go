@@ -82,7 +82,7 @@ func Test_cliOptions_url(t *testing.T) {
 	} {
 		t.Run(fmt.Sprintf("%q", td.input), func(t *testing.T) {
 			c := &cliOptions{
-				TopicHost: td.input,
+				TopicEndpoint: td.input,
 			}
 			got, err := c.url()
 			require.NoError(t, err)
@@ -148,16 +148,14 @@ func Test_run(t *testing.T) {
 		},
 	})
 	cli := &cliOptions{
-		TopicHost: ts.server.URL,
-		Header: map[string]string{
-			"foo": "bar",
-		},
-		ID:          "jp:id",
-		Subject:     "my subject",
-		EventType:   "jp:type",
-		EventTime:   "jp:time",
-		DataVersion: "1.0",
-		QueueSize:   3,
+		TopicEndpoint: ts.server.URL,
+		Header:        []string{"foo: bar"},
+		ID:            "jp:id",
+		Subject:       "my subject",
+		EventType:     "jp:type",
+		EventTime:     "jp:time",
+		DataVersion:   "1.0",
+		BatchSize:     3,
 	}
 	err := run(ctx, cli, scanner)
 	require.NoError(t, err)
